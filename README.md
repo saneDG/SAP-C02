@@ -1,4 +1,5 @@
-NOTE: These are my personal notes from my sudies to AWS SAP-C02 certification exam. Use as you wish but notes are created for me personally and might not make any sense to you.
+> [!NOTE]
+> These are my personal notes from my sudies to AWS SAP-C02 certification exam. Use as you wish but notes are created for me personally and might not make any sense to you.
 
 #### <span style="color: #E67E22;">To Study Later (Keywords & Open Topics)</span>
 
