@@ -1,6 +1,7 @@
 > [!NOTE]
 > These are my personal notes from my sudies to AWS SAP-C02 certification exam. Use as you wish but notes are created for me personally and might not make any sense to you.
 
+
 #### <span style="color: #E67E22;">To Study Later (Keywords & Open Topics)</span>
 
 - Cost optimization: Trusted Advisor (exact trigger scenarios)
@@ -79,6 +80,11 @@ Both question styles try to trick you and test your deep knowledge by including 
 - TXT    -> text records
 - NS     -> Name servers
 
+
+#### Route 53
+##### DNSSEC using Route53
+
+
 #### <span style="color: #8E44AD;">Direct Connect (DX)</span>
 
 - **1 Gbps DX:** 1000BASE-LX Transceiver
@@ -140,7 +146,14 @@ Public VIF
 ##### VPC Routing Order
 ![[Pasted image 20260527133511.png|145]]
 
-##### Interface Endpoint
+
+##### AWS PrivateLink
+AWS PrivateLink provides private connectivity between VPCs, AWS services, and on-premises applications, securely on the Amazon network.
+- Technical base for Interface Endpoint
+- IPv4 & TCP only
+- DX, site-to-site VPN and VPC Peering are supported
+
+##### VPC Interface Endpoint
 
 - Provide private access to AWS public services
 - Added to specific subnets - ENI - NOT HA
@@ -148,16 +161,19 @@ Public VIF
 - Uses PrivateLink
 - Uses DNS (compared to Gateway Endpoint that uses prefix list)
 	- e.g. `vpce-123-xyz.sns.us-east-1.vpce.amazonaws.com`
+- If private DNS is enabled they work by default with no application changes
+- Only IPv4
 
-##### Gateway Endpoint
+##### VPC Gateway Endpoint
 
 - Uses prefix list (compared to Interface Endpoint that uses DNS)
 - Provide private access to S3 and DDB
 - So this is used if you need private access to S3 or DDB. Use Interface Endpoint in other situations.
 - HIGHLY AVAILABLE
 	- Regional ... cant access cross-region services
+	- Resilient to AZ failure tho
 - Endpoint policy is used to control what it can access
-- Can be used to make S3 bucket private by allowing only access from gateway endpoint
+	- Can be used to make S3 bucket private by allowing only access from gateway endpoint
 - Only accessible from inside VPC
 
 
@@ -579,6 +595,54 @@ What works:
 
 ![[Pasted image 20260529165146.png|285]]
 
+##### RDS Proxy
+- Useful for example when opening and closing connections consume resources and that causes latency. For example every lambda opens and closes connection and that causes lots of unnecessary connections at the same time.
+	- -> Use RDS Proxy to handle this issue
+- Handling failure of database is hard ...
+	- RDS Proxy is the answer!
+- Application -> connects to proxy (Connection pooling) -> Database
+- Proxy connections can be **reused** avoiding the lag caused by connection/termination for each invocation without the proxy
+- Can also be used for establishing connection to secondary database in case of primary failure
+	- Client -> proxy connection waits even if the target DB is unresponsive
+Use cases for RDS Proxy:
+- Too many connections errors
+	- When using smaller instances
+- When lambdas create too many connections
+	- connection reuse & IAM auth
+- Long running connections SAAS apps - low latency
+- To reduce the time for failover
+	- and make it transparent to the application
+RDS Proxy key facts:
+- Fully managed DB proxy for RDS/Aurora
+- Accessed via Proxy Endpoint - no app changes
+- ONLY accessible from a VPC
+
+##### RDS Security
+- SSL/TLS (in transit) is available for RDS, can be set to be mandatory
+- RDS supports EBS volume encryption - KMS
+- **Encryption can't be removed once added**
+Special case:
+- RDS MSSQL and RDS Oracle support TDE (Transparent Data Encryption)
+- Encryption handled within the DB engine (Not by the host)
+- RDS Oracle supports integration with CloudHSM
+	- Much stronger key controls (even from AWS)
+
+##### RDS IAM Authentication
+- Policy attached to users or roles maps that IAM identity onto the local RDS user
+- Only used for Authentication!! (NOT authorisation)
+
+##### RDS Custom
+Amazon RDS Custom is a managed database service for applications that require customization of the underlying operating system and database environment. Benefits of RDS automation with the access needed for legacy, packaged, and custom applications.
+
+
+
+##### Aurora
+- Uses a **cluster**
+- A single primary instance + 0 or more replicas
+- No local storage - uses cluster volume
+- No free tier cost option
+- Beyond RDS single AZ (micro), Aurora offers better value
+
 ###### Aurora Serverless
 
 - Set MIN and MAX ACU (Aurora Capacity Units) and aurora scales based on that
@@ -990,7 +1054,7 @@ Keywords for the exam:
 ##### Kinesis Data Stream
 - This is the default I guess?
 - Real-time (~200ms)
-##### Kinesis Firehose
+##### Kinesis Data Firehose
 - Connects to Kinesis Data Stream ^
 - Fully managed service
 - 60s delay, no real time
@@ -1000,7 +1064,7 @@ Keywords for the exam:
 	- Redshift
 	- ElasticSearch
 	- S3 Bucket
-##### Amazon Kinesis Data Analytics
+##### Kinesis Data Analytics
 - real-time processing of data
 - uses SQL
 - Ingests from Kinesis Data Streams or Firehose
@@ -1020,6 +1084,96 @@ AWS Config is a service which records the configuration of resources over time (
 All the information is stored regionally in an S3 config bucket.
 
 AWS Config is capable of checking for compliance .. and generating notifications and events based on compliance.
+
+
+### Load Balancing
+
+#### Connection Draining
+- Enable this to keep connections alive for Classic Load Balancer
+- Allows in-flight requests to complete
+- Without this: normally all connections are closed & no new connections are created
+- Timeout: 1 - 3600 seconds (default 300)
+- InService: Instance deregistration currently in progress
+- Auto scaling waits for all connections to complete or Timeout
+#### Deregistration Delay
+- Supported on ALB, NLB and GWLBs
+- Defined on the target group - NOT the LB
+- Stops sending requests to deregistering targets
+- Existing connections can continue
+	- until they complete naturally
+	- or the deregistration delay is reached
+- Default 300 seconds (0-3600 seconds)
+
+
+### Auto Scaling Groups
+- FREE!! - Pay only for resources created
+- Automatic scaling and Self-Healing for EC2- 
+- Uses Launch Templates or Configurations
+- Has Minimum, Desired and Maximum Size (e.g. 1:2:4)
+- Keep running instances at the Desired capacity by provisioning or terminating instances
+- Scaling Policies automate based on metrics
+- Use cooldowns to avoid rapid scaling
+- Think about more, smaller instances
+- Used together with ALB for elasticity
+- ASG defines WHEN & WHERE, LT (Launch Template) defines WHAT
+#### Scaling policies
+- Manual Scaling - manually adjusting
+- Scheduled Scaling - time-based
+- Dynamic Scaling
+	- Simple - "CPU above 50% +1", "CPU Below 50% -1"
+	- Stepped Scaling - You can pick scale for example: "0%  30%: 1 instance, 30% - 50%: 3 instances ..."
+	- Target tracking - Desired Aggregate CPU load = 40% .. ASG tries to scale to stay at that desired 40% load
+	- Scaling Based on SQS
+- Cooldown Period - value in seconds, "how long to wait after scaling action before doing another"
+	- Used so scaling does not get out of hands
+ADVANCED:
+- ASG don't NEED scaling policies - they can have none
+- Step Scaling - 
+
+#### ASG + Load Balancers
+- This is the shit!
+
+#### ASG Lifecycle Hooks
+- Custom Actions on instances during ASG Actions
+- Instances are paused within the flow
+	- they wait
+	- until a timeout, then either continue or abandon
+	- or resume the ASG process ``CompleteLifecycleAction``
+- Can be used for example to load data from database before scaling OUT and adding new instances
+- Or load data or logs from the instance before its being terminated at Scale In event
+- EventBridge can be used to initiate other processes
+
+#### ASG Health Checks
+- Three types: EC2 (default), ELB & custom
+- EC2 - Anything but instance running is viewed as UNHEALTHY
+- ELB - HEALTHY means: Running & passing ELB health check
+	- can be more application aware (Layer 7)
+- Custom - Instances marked healthy & unhealthy by an external system
+- Health check grace period (Default 300s) - Delay before starting checks
+	- allows system launch, bootstrapping and application start
+
+#### X-Forwarded & PROXY Protocol
+- Solves the issue where clients connect to LB and client IP is gone because server only sees thet request is made from the LB, not the client
+##### X-Forwarded-For
+- A set of HTTP headers (it only works with HTTP/S)(NO other protocols)(Layer 7)
+- The header is added or appended by proxies/LBs
+- `X-Forwarded-For: 1.3.3.7,proxy1,proxy2`
+	- the client is leftmost in the list
+- Backend web server needs to be aware of this header
+- Connections from LB, but X-Forwarded-For contains original client
+- Supported by CLB & ALB but NOT SUPPORTED NLB (because its layer 4)
+##### PROXY Protocol
+- Layer 4
+- additional layer 4 (tcp) header .. works with a range of protocols (including HTTP and HTTPS)
+	- works with CLB and NLB
+- Usually used for unbroken HTTPS (TCP listener) where end to end encryption is needed
+	- Because we use unbroken HTTPS (TCP listener), we cant use X-Forwarded-For header
+	- So use PROXY Protocol if you cant add HTTP header
+
+
+
+
+
 
 ### 💈 Data Analytics
 
@@ -1047,7 +1201,7 @@ HDFS - Hadoop File System
 
 - input -> EMR -> output
 - Core nodes manage HDFS storage
-- EMRFS is resilent file system supported natively within EMR
+- EMRFS is resilient file system supported natively within EMR
 	- resilient to core node failures
 
 ![[Pasted image 20260529151632.png|329]]
